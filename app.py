@@ -78,7 +78,7 @@ if "df" not in st.session_state:
 
 # --- Sidebar ---
 st.sidebar.title("📊 Menu Utama")
-menu = st.sidebar.radio("Navigasi:", ["🏠 Dashboard", "📥 Input & Process", "📊 Visualisasi", "🔍 Detail Data", "🧠 Pelatihan Model", "💾 Unduh Data"])
+menu = st.sidebar.radio("Navigasi:", ["🏠 Dashboard", "📥 Input & Process", "📊 Visualisasi", "🔍 Detail Data", "🧠 Pelatihan Model", "💾 Export"])
 
 # --- 1: Dashboard ---
 if menu == "🏠 Dashboard":
@@ -223,8 +223,8 @@ elif menu == "🧠 Pelatihan Model":
                 plt.ylabel('Aktual')
                 st.pyplot(fig)
 
-# --- 6: Unduh Data ---
-elif menu == "💾Unduh Data":
+# --- 6: Export ---
+elif menu == "💾 Export":
     st.title("💾 Download Hasil")
     if not st.session_state.df.empty:
         col_ex1, col_ex2 = st.columns(2)
