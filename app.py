@@ -30,7 +30,7 @@ stemmer = factory.create_stemmer()
 
 # --- Konfigurasi Halaman ---
 st.set_page_config(
-    page_title="Sentimen Analysis Pro",
+    page_title="Sentimen Analysis Produk",
     page_icon="🚀",
     layout="wide"
 )
@@ -50,16 +50,30 @@ slang_dict = {
 
 # --- Fungsi Preprocessing ---
 def preprocess_step_by_step(text):
+    # 1. Cleaning & Lowercase
     text = str(text).lower()
     text = re.sub(r'https?://\S+|www\.\S+', '', text)
     text = re.sub(r'[-+]?[0-9]+', '', text)
     text = re.sub(r'[^\w\s]', ' ', text)
+    
+    # 2. Slang Handling
     words = text.split()
     words = [slang_dict.get(w, w) for w in words]
+    
+    # 3. Tokenizing
     tokens = word_tokenize(" ".join(words))
-    tokens = [w for w in tokens if w not in stop_words]
-    tokens = [stemmer.stem(w) for w in tokens]
-    return " ".join(tokens)
+    
+    # 4. Stopwords Removal
+    tokens_no_stop = [w for w in tokens if w not in stop_words]
+    
+    # 5. Stemming
+    stemmed_tokens = [stemmer.stem(w) for w in tokens_no_stop]
+    
+    return {
+        "clean_text": " ".join(words),
+        "tokens": stemmed_tokens,
+        "final_text": " ".join(stemmed_tokens)
+    }
 
 def calculate_polarity(cleaned_text):
     tokens = word_tokenize(cleaned_text)
@@ -74,7 +88,7 @@ def detect_sentiment(score):
 
 # --- Inisialisasi Session State ---
 if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame(columns=["text", "text_cleaned", "polarity_score", "sentimen"])
+    st.session_state.df = pd.DataFrame(columns=["text", "text_clean", "text_preprocessed", "polarity_score", "sentimen"])
 
 # --- Sidebar ---
 st.sidebar.title("📊 Menu Utama")
@@ -106,11 +120,9 @@ elif menu == "📥 Input & Process":
         if manual: input_data = manual.split("\n")
         
     with tab2:
-        # Penambahan format xlsx dan xls
         file = st.file_uploader("Pilih file CSV atau Excel", type=['csv', 'xlsx', 'xls'])
         if file:
             try:
-                # Logika pengecekan ekstensi file
                 if file.name.endswith('.csv'):
                     df_up = pd.read_csv(file)
                 else:
@@ -122,17 +134,23 @@ elif menu == "📥 Input & Process":
             except Exception as e: 
                 st.error(f"Gagal membaca file: {e}")
 
-    if st.button("🔥 Jalankan Pipeline", use_container_width=True):
+    if st.button("🔥 Proses Analisis", use_container_width=True):
         if input_data:
-            with st.spinner('Memproses Data dengan Sastrawi (Stemming mungkin memakan waktu)...'):
+            with st.spinner(' Sedang Memproses Data (silahkan ditunggu)...'):
                 processed_list = []
                 for t in input_data:
                     if t.strip() and t.lower() != 'nan':
-                        cleaned = preprocess_step_by_step(t)
-                        score = calculate_polarity(cleaned)
+                        # Jalankan Preprocessing
+                        prep_results = preprocess_step_by_step(t)
+                        
+                        # Hitung Polarity
+                        score = calculate_polarity(prep_results['final_text'])
+                        
                         processed_list.append({
                             "text": t, 
-                            "text_cleaned": cleaned,
+                            "text_clean": prep_results['clean_text'],
+                            "text_preprocessed": prep_results['tokens'], # Hasil Tokenizing & Stemming (List)
+                            "final_ready": prep_results['final_text'], # String untuk model
                             "polarity_score": score, 
                             "sentimen": detect_sentiment(score)
                         })
@@ -154,7 +172,7 @@ elif menu == "📊 Visualisasi":
             st.pyplot(fig)
         with c2:
             st.subheader("WordCloud")
-            text_wc = " ".join(df['text_cleaned'])
+            text_wc = " ".join(df['final_ready'])
             if text_wc.strip():
                 wc = WordCloud(background_color='white', width=800, height=400).generate(text_wc)
                 fig2, ax2 = plt.subplots()
@@ -168,11 +186,32 @@ elif menu == "📊 Visualisasi":
 
 # --- 4: Detail Data ---
 elif menu == "🔍 Detail Data":
-    st.title("🔍 Data Explorer")
+    st.title("🔍 Data Hasil Analisis Sentimen")
     if not st.session_state.df.empty:
-        st.dataframe(st.session_state.df, use_container_width=True)
+        df_display = st.session_state.df.copy()
+        
+        # Menampilkan tabel dengan kolom yang diminta
+        # Kita susun urutannya agar enak dibaca
+        cols_to_show = ["text", "text_clean", "text_preprocessed", "polarity_score", "sentimen"]
+        
+        st.write("### Tabel Hasil Analisis Sentimen Lengkap")
+        st.dataframe(
+            df_display[cols_to_show], 
+            column_config={
+                "text": "Teks Asli",
+                "text_clean": "Text Clean",
+                "text_preprocessed": "Text Preprocessed",
+                "polarity_score": "Skor",
+                "sentimen": "Label"
+            },
+            use_container_width=True
+        )
+        
+        st.info("💡 **Keterangan Kolom:**\n"
+                "- **Text Clean**: Teks yang sudah dibersihkan dari simbol/angka dan kata slang diperbaiki.\n"
+                "- **Text Preprocessed**: Hasil akhir setelah tokenizing, pembuangan stopword, dan stemming.")
     else: 
-        st.warning("Belum ada data untuk ditampilkan.")
+        st.warning("Belum ada data untuk ditampilkan. Silahkan proses data di menu **Input & Process**.")
 
 # --- 5: Pelatihan Model ---
 elif menu == "🧠 Pelatihan Model":
@@ -183,27 +222,21 @@ elif menu == "🧠 Pelatihan Model":
         st.error("Data terlalu sedikit untuk training (minimal butuh 5 ulasan untuk validasi).")
     else:
         if st.button("🚀 Train & Evaluasi Model", use_container_width=True):
-            # mapping sentimen ke numerik
             s_map = {"Positive": 1, "Netral": 0, "Negative": -1}
             df['label'] = df['sentimen'].map(s_map)
             
-            # Vectorization
             vec = CountVectorizer()
-            X = vec.fit_transform(df['text_cleaned'])
+            X = vec.fit_transform(df['final_ready'])
             y = df['label']
             
-            # Split Data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            # Model
             model = LinearRegression().fit(X_train, y_train)
             y_pred = model.predict(X_test)
             
-            # Thresholding sederhana
             y_pred_cat = [1 if x > 0.3 else (-1 if x < -0.3 else 0) for x in y_pred]
             
             st.divider()
-            
             col_eval1, col_eval2 = st.columns([3, 2])
             
             with col_eval1:
@@ -228,12 +261,8 @@ elif menu == "💾 Export":
     st.title("💾 Download Hasil")
     if not st.session_state.df.empty:
         col_ex1, col_ex2 = st.columns(2)
-        
-        # Export CSV
         csv = st.session_state.df.to_csv(index=False).encode('utf-8')
         col_ex1.download_button("Download as CSV", data=csv, file_name="hasil_sentimen.csv", mime="text/csv", use_container_width=True)
-        
-        # Penjelasan Ekspor
-        st.info("Hasil ekspor mencakup teks asli, teks hasil preprocessing, skor polaritas, dan kategori sentimen.")
+        st.info("Hasil ekspor mencakup semua kolom hasil analisis sentimen.")
     else: 
         st.warning("Tidak ada data untuk diunduh.")
