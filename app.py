@@ -91,7 +91,7 @@ def detect_sentiment(score):
 
 # --- Inisialisasi Session State ---
 if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame(columns=["text", "text_processed", "polarity_score", "sentimen"])
+    st.session_state.df = pd.DataFrame(columns=["text", "text_hasil_preprocessed", "polarity_score", "sentimen"])
 
 # --- Sidebar ---
 st.sidebar.title("📊 Menu Utama Analisis Sentimen")
@@ -159,7 +159,7 @@ elif menu == "📥 Input & Process":
                         score = calculate_polarity(cleaned)
                         processed_list.append({
                             "text": t, 
-                            "text_processed": cleaned,
+                            "text_hasil_preprocessed": cleaned,
                             "polarity_score": score, 
                             "sentimen": detect_sentiment(score)
                         })
@@ -183,7 +183,7 @@ elif menu == "📊 Visualisasi":
             st.pyplot(fig)
         with c2:
             st.subheader("WordCloud")
-            text_wc = " ".join(df['text_processed'].astype(str))
+            text_wc = " ".join(df['text_hasil_preprocessed'].astype(str))
             if text_wc.strip():
                 wc = WordCloud(background_color='white', width=800, height=400).generate(text_wc)
                 fig2, ax2 = plt.subplots()
@@ -216,7 +216,7 @@ elif menu == "🧠 Pelatihan Model":
             df['label'] = df['sentimen'].map(s_map)
             
             vec = CountVectorizer()
-            X = vec.fit_transform(df['text_processed'])
+            X = vec.fit_transform(df['text_hasil_preprocessed'])
             y = df['label']
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
