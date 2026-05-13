@@ -19,9 +19,12 @@ from sklearn.metrics import mean_squared_error, confusion_matrix, classification
 # --- Konfigurasi Resource NLTK & Sastrawi ---
 @st.cache_resource
 def download_nltk_resources():
-    nltk.download('punkt')
-    nltk.download('punkt_tab')
-    nltk.download('stopwords')
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt')
+        nltk.download('punkt_tab')
+        nltk.download('stopwords')
 
 download_nltk_resources()
 stop_words = set(stopwords.words('indonesian'))
@@ -40,43 +43,43 @@ positive_words = ["bagus", "lezat", "keren", "enak", "puas", "mantap", "cepat", 
 negative_words = ["hancur", "jelek", "rusak", "ramai", "kurang", "parah", "lambat", "kecewa", "kotor", "tidak", "lama", "marah", "pahit", "asam", "busuk", "kasar", "grainy", "crumbly", "lembek", "basah", "lummer", "eneg", "mahal", "basi", "kadaluarsa", "buatan", "apek", "aneh", "kesal", "lengket", "hambar", "rugi", "zonk", "penyok", "salah"]
 
 slang_dict = {
-    "jg": "juga", "gak": "tidak", "tdk": "tidak", "nggak": "tidak",
-    "blm": "belum", "udah": "sudah", "udh": "sudah", "sdh": "sudah",
-    "bgt": "banget", "gt": "begitu", "klo": "kalau", "kalo": "kalau",
-    "dgn": "dengan", "brg": "barang", "msh": "masih", "aja": "saja",
-    "tp": "tapi", "rekomended": "bagus", "mantul": "mantap",
-    "murce": "murah", "kece": "bagus", "gercep": "cepat"
+    "jg": "juga", "gak": "tidak", "tdk": "tidak", "nggak": "tidak", "trus": "terus", "trs": "terus",
+    "blm": "belum", "udah": "sudah", "udh": "sudah", "sdh": "sudah", "skrg": "sekarang", "ajh": "saja",
+    "bgt": "banget", "gt": "begitu", "klo": "kalau", "kalo": "kalau", "kepengen": "ingin", "exp": "kadaluarsa",
+    "dgn": "dengan", "brg": "barang", "msh": "masih", "aja": "saja", "ndak": "tidak", "ndk": "tidak",
+    "tp": "tapi", "rekomended": "bagus", "mantul": "mantap", "skrg": "sekarang", "rapih": "rapi",
+    "murce": "murah", "kece": "bagus", "gercep": "cepat", "yg": "yang", "tgl": "tanggal" , "krn": "karena",
+    "dn": "dan", "d": "di", "ga": "tidak", "pait": "pahit", "ok": "okey", "enk": "enak", "kykny": "sepertinya"
 }
 
-# --- Fungsi Preprocessing ---
+# --- Tahap Preprocessing ---
 def preprocess_step_by_step(text):
-    # 1. Cleaning & Lowercase
+
+# --- 1. Fungsi Case Folding ---
     text = str(text).lower()
+
+# --- 2. Fungsi Cleaning ---
     text = re.sub(r'https?://\S+|www\.\S+', '', text)
     text = re.sub(r'[-+]?[0-9]+', '', text)
     text = re.sub(r'[^\w\s]', ' ', text)
-    
-    # 2. Slang Handling
+
+# --- 3. Fungsi Normalisasi ---
     words = text.split()
     words = [slang_dict.get(w, w) for w in words]
-    
-    # 3. Tokenizing
-    tokens = word_tokenize(" ".join(words))
-    
-    # 4. Stopwords Removal
-    tokens_no_stop = [w for w in tokens if w not in stop_words]
-    
-    # 5. Stemming
-    stemmed_tokens = [stemmer.stem(w) for w in tokens_no_stop]
-    
-    return {
-        "clean_text": " ".join(words),
-        "tokens": stemmed_tokens,
-        "final_text": " ".join(stemmed_tokens)
-    }
 
-def calculate_polarity(cleaned_text):
-    tokens = word_tokenize(cleaned_text)
+# --- 4. Fungsi Tokenizing ---
+    tokens = word_tokenize(" ".join(words))
+
+# --- 5. Fungsi Stopword ---
+    tokens = [w for w in tokens if w not in stop_words]
+
+# --- 6. Fungsi Stemming ---
+    tokens = [stemmer.stem(w) for w in tokens]
+
+    return " ".join(tokens)
+
+def calculate_polarity(clean_text):
+    tokens = word_tokenize(clean_text)
     pos_count = sum(1 for w in tokens if w in positive_words)
     neg_count = sum(1 for w in tokens if w in negative_words)
     return pos_count - neg_count
@@ -88,15 +91,15 @@ def detect_sentiment(score):
 
 # --- Inisialisasi Session State ---
 if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame(columns=["text", "text_clean", "text_preprocessed", "polarity_score", "sentimen"])
+    st.session_state.df = pd.DataFrame(columns=["text", "text_processed", "polarity_score", "sentimen"])
 
 # --- Sidebar ---
-st.sidebar.title("📊 Menu Utama")
+st.sidebar.title("📊 Menu Utama Analisis Sentimen")
 menu = st.sidebar.radio("Navigasi:", ["🏠 Dashboard", "📥 Input & Process", "📊 Visualisasi", "🔍 Detail Data", "🧠 Pelatihan Model", "💾 Export"])
 
 # --- 1: Dashboard ---
 if menu == "🏠 Dashboard":
-    st.title("🚀 Analisis Sentimen Menggunakan Linear Regression")
+    st.title("🚀 Analisis Sentimen Ulasan Produk Menggunakan Linear Regression")
     df = st.session_state.df
     if df.empty:
         st.info("Silahkan upload atau input data di menu **Input & Process**.")
@@ -120,40 +123,48 @@ elif menu == "📥 Input & Process":
         if manual: input_data = manual.split("\n")
         
     with tab2:
-        file = st.file_uploader("Pilih file CSV atau Excel", type=['csv', 'xlsx', 'xls'])
+        file = st.file_uploader("Pilih file CSV (hasil Excel) atau file Excel langsung", type=['csv', 'xlsx', 'xls'])
         if file:
             try:
+                # Logika pembacaan file yang lebih fleksibel
                 if file.name.endswith('.csv'):
-                    df_up = pd.read_csv(file)
+                    # Mencoba membaca CSV dengan berbagai kemungkinan encoding dan separator (Excel sering pakai ';')
+                    try:
+                        df_up = pd.read_csv(file, sep=None, engine='python', encoding='utf-8')
+                    except:
+                        file.seek(0) # Reset pointer file
+                        df_up = pd.read_csv(file, sep=None, engine='python', encoding='latin1')
                 else:
                     df_up = pd.read_excel(file)
                 
                 st.success(f"Berhasil mengunggah: {file.name}")
+                st.write("Preview Data:")
+                st.dataframe(df_up.head(3))
+                
                 col = st.selectbox("Pilih kolom yang berisi teks ulasan:", df_up.columns)
-                input_data = df_up[col].astype(str).tolist()
+                # Filter data agar tidak error saat preprocessing
+                input_data = df_up[col].dropna().astype(str).tolist()
             except Exception as e: 
                 st.error(f"Gagal membaca file: {e}")
 
-    if st.button("🔥 Proses Analisis", use_container_width=True):
+    if st.button("🔥 Proses Dimulai", use_container_width=True):
         if input_data:
-            with st.spinner(' Sedang Memproses Data (silahkan ditunggu)...'):
+            with st.spinner('Memproses Data... (sedang loading harap tunggu)'):
                 processed_list = []
-                for t in input_data:
+                # Progress bar untuk user experience
+                prog_bar = st.progress(0)
+                for i, t in enumerate(input_data):
                     if t.strip() and t.lower() != 'nan':
-                        # Jalankan Preprocessing
-                        prep_results = preprocess_step_by_step(t)
-                        
-                        # Hitung Polarity
-                        score = calculate_polarity(prep_results['final_text'])
-                        
+                        cleaned = preprocess_step_by_step(t)
+                        score = calculate_polarity(cleaned)
                         processed_list.append({
                             "text": t, 
-                            "text_clean": prep_results['clean_text'],
-                            "text_preprocessed": prep_results['tokens'], # Hasil Tokenizing & Stemming (List)
-                            "final_ready": prep_results['final_text'], # String untuk model
+                            "text_processed": cleaned,
                             "polarity_score": score, 
                             "sentimen": detect_sentiment(score)
                         })
+                    prog_bar.progress((i + 1) / len(input_data))
+                
                 st.session_state.df = pd.DataFrame(processed_list)
                 st.success(f"✅ Selesai! {len(processed_list)} data berhasil diproses.")
         else: 
@@ -172,7 +183,7 @@ elif menu == "📊 Visualisasi":
             st.pyplot(fig)
         with c2:
             st.subheader("WordCloud")
-            text_wc = " ".join(df['final_ready'])
+            text_wc = " ".join(df['text_processed'].astype(str))
             if text_wc.strip():
                 wc = WordCloud(background_color='white', width=800, height=400).generate(text_wc)
                 fig2, ax2 = plt.subplots()
@@ -186,47 +197,26 @@ elif menu == "📊 Visualisasi":
 
 # --- 4: Detail Data ---
 elif menu == "🔍 Detail Data":
-    st.title("🔍 Data Hasil Analisis Sentimen")
+    st.title("🔍 Data Explorer")
     if not st.session_state.df.empty:
-        df_display = st.session_state.df.copy()
-        
-        # Menampilkan tabel dengan kolom yang diminta
-        # Kita susun urutannya agar enak dibaca
-        cols_to_show = ["text", "text_clean", "text_preprocessed", "polarity_score", "sentimen"]
-        
-        st.write("### Tabel Hasil Analisis Sentimen Lengkap")
-        st.dataframe(
-            df_display[cols_to_show], 
-            column_config={
-                "text": "Teks Asli",
-                "text_clean": "Text Clean",
-                "text_preprocessed": "Text Preprocessed",
-                "polarity_score": "Skor",
-                "sentimen": "Label"
-            },
-            use_container_width=True
-        )
-        
-        st.info("💡 **Keterangan Kolom:**\n"
-                "- **Text Clean**: Teks yang sudah dibersihkan dari simbol/angka dan kata slang diperbaiki.\n"
-                "- **Text Preprocessed**: Hasil akhir setelah tokenizing, pembuangan stopword, dan stemming.")
+        st.dataframe(st.session_state.df, use_container_width=True)
     else: 
-        st.warning("Belum ada data untuk ditampilkan. Silahkan proses data di menu **Input & Process**.")
+        st.warning("Belum ada data untuk ditampilkan.")
 
 # --- 5: Pelatihan Model ---
 elif menu == "🧠 Pelatihan Model":
-    st.title("🧠 Evaluasi Model")
-    df = st.session_state.df
+    st.title("🧠 Pemodelan Linear Regression")
+    df = st.session_state.df.copy()
     
     if len(df) < 5:
-        st.error("Data terlalu sedikit untuk training (minimal butuh 5 ulasan untuk validasi).")
+        st.error("Data terlalu sedikit untuk training (minimal butuh 5 ulasan).")
     else:
-        if st.button("🚀 Train & Evaluasi Model", use_container_width=True):
+        if st.button("🚀 Train & Evaluate Model", use_container_width=True):
             s_map = {"Positive": 1, "Netral": 0, "Negative": -1}
             df['label'] = df['sentimen'].map(s_map)
             
             vec = CountVectorizer()
-            X = vec.fit_transform(df['final_ready'])
+            X = vec.fit_transform(df['text_processed'])
             y = df['label']
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -234,6 +224,7 @@ elif menu == "🧠 Pelatihan Model":
             model = LinearRegression().fit(X_train, y_train)
             y_pred = model.predict(X_test)
             
+            # Thresholding
             y_pred_cat = [1 if x > 0.3 else (-1 if x < -0.3 else 0) for x in y_pred]
             
             st.divider()
@@ -260,9 +251,8 @@ elif menu == "🧠 Pelatihan Model":
 elif menu == "💾 Export":
     st.title("💾 Download Hasil")
     if not st.session_state.df.empty:
-        col_ex1, col_ex2 = st.columns(2)
         csv = st.session_state.df.to_csv(index=False).encode('utf-8')
-        col_ex1.download_button("Download as CSV", data=csv, file_name="hasil_sentimen.csv", mime="text/csv", use_container_width=True)
-        st.info("Hasil ekspor mencakup semua kolom hasil analisis sentimen.")
+        st.download_button("Download CSV", data=csv, file_name="hasil_sentimen.csv", mime="text/csv", use_container_width=True)
+        st.info("File CSV ini dapat dibuka kembali di Excel.")
     else: 
         st.warning("Tidak ada data untuk diunduh.")
